@@ -19,6 +19,7 @@ export default function Courses({ state, setView }) {
   const [activeCourseId, setActiveCourseId] = useState(null);
   const [activeDetailTab, setActiveDetailTab] = useState(0);
   const [expandedModule, setExpandedModule] = useState(null);
+  const [activeVideo, setActiveVideo] = useState(null);
   const [utrId, setUtrId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [submittingPay, setSubmittingPay] = useState(false);
@@ -334,11 +335,26 @@ export default function Courses({ state, setView }) {
                       <Box sx={{ p: 2, pt: 0, borderTop: `1px solid ${themeBorderColor}50` }}>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.5 }}>
                           {item.lessons.map((lesson, lIdx) => (
-                            <Box key={lIdx} sx={{ 
-                              display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, 
-                              borderRadius: '8px', background: 'rgba(0,0,0,0.02)',
-                              '&:hover': { background: 'rgba(0,0,0,0.04)' }
-                            }}>
+                            <Box 
+                              key={lIdx} 
+                              onClick={() => {
+                                if (isPaid) {
+                                  setActiveVideo({
+                                    title: lesson.title,
+                                    ytId: lesson.ytId || 'jNQXAC9IVRw',
+                                    duration: lesson.duration
+                                  });
+                                } else {
+                                  handleShowPayment(course);
+                                }
+                              }}
+                              sx={{ 
+                                display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, 
+                                borderRadius: '8px', background: 'rgba(0,0,0,0.02)',
+                                cursor: 'pointer',
+                                '&:hover': { background: 'rgba(0,0,0,0.04)' }
+                              }}
+                            >
                               <PlayArrowIcon sx={{ fontSize: '1rem', color: isPaid ? '#F7931E' : themeTextSec }} />
                               <Box sx={{ flex: 1 }}>
                                 <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: isPaid ? themeTextColor : themeTextSec }}>
@@ -368,7 +384,24 @@ export default function Courses({ state, setView }) {
             <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, letterSpacing: '1.5px', display: 'block', mb: 2.5, fontSize: '0.65rem' }}>
               📹 VIDEO LECTURE SERIES — {videos.length} CLASSES
             </Typography>
-            {videos.length > 0 ? (
+            {!isPaid ? (
+              <Box sx={{ py: 8, textAlign: 'center', border: `1px solid ${themeBorderColor}`, borderRadius: '24px', background: themeCardBg }}>
+                <Typography sx={{ fontSize: '2.5rem', mb: 1 }}>🔒</Typography>
+                <Typography sx={{ fontSize: '0.85rem', fontWeight: 800, color: themeTextColor, mb: 1 }}>
+                  Video Lectures Locked
+                </Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: themeTextSec, mb: 3, maxWidth: '280px', mx: 'auto', lineHeight: 1.4 }}>
+                  Enroll in this course to gain immediate access to the full premium video lecture series.
+                </Typography>
+                <Button
+                  variant="contained" size="small"
+                  onClick={() => handleShowPayment(course)}
+                  sx={{ background: 'linear-gradient(135deg, #0B2E59 0%, #F7931E 100%)', color: '#fff', fontSize: '0.65rem', fontWeight: 900, px: 3, py: 1, borderRadius: '8px' }}
+                >
+                  🔒 UNLOCK LECTURES
+                </Button>
+              </Box>
+            ) : videos.length > 0 ? (
               <Grid container spacing={2.5}>
                 {videos.map((v, i) => (
                   <Grid item xs={12} md={6} key={i}>
@@ -404,56 +437,77 @@ export default function Courses({ state, setView }) {
         {/* TAB 2: RESOURCES */}
         {activeDetailTab === 2 && (
           <Box>
-            {refs.length > 0 && (
-              <Box sx={{ mb: 4 }}>
-                <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, letterSpacing: '1.5px', display: 'block', mb: 2, fontSize: '0.65rem' }}>
-                  🔗 REFERENCE MATERIALS
+            {!isPaid ? (
+              <Box sx={{ py: 8, textAlign: 'center', border: `1px solid ${themeBorderColor}`, borderRadius: '24px', background: themeCardBg }}>
+                <Typography sx={{ fontSize: '2.5rem', mb: 1 }}>🔒</Typography>
+                <Typography sx={{ fontSize: '0.85rem', fontWeight: 800, color: themeTextColor, mb: 1 }}>
+                  Resource Materials Locked
                 </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {refs.map((r, i) => (
-                    <Button
-                      key={i} fullWidth variant="outlined" onClick={() => window.open(r.url, '_blank')}
-                      sx={{
-                        justifyContent: 'flex-start', py: 1.5, px: 2.5, background: themeCardBg, border: `1px solid ${themeBorderColor}`,
-                        borderRadius: '12px', textTransform: 'none', color: themeTextColor,
-                        '&:hover': { background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(11, 46, 89, 0.04)', borderColor: course.color || '#F7931E' }
-                      }}
-                    >
-                      <Box sx={{ width: '28px', height: '28px', borderRadius: '8px', background: `${course.color || '#F7931E'}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', mr: 1.5, fontSize: '0.85rem' }}>🔗</Box>
-                      <Typography sx={{ fontSize: '0.75rem', fontWeight: 700 }}>{r.title}</Typography>
-                    </Button>
-                  ))}
-                </Box>
-              </Box>
-            )}
-
-            {docs.length > 0 && (
-              <Box>
-                <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, letterSpacing: '1.5px', display: 'block', mb: 2, fontSize: '0.65rem' }}>
-                  📄 DOCUMENTATION & GUIDES
+                <Typography sx={{ fontSize: '0.75rem', color: themeTextSec, mb: 3, maxWidth: '280px', mx: 'auto', lineHeight: 1.4 }}>
+                  Unlock this course to download guides, source templates, and reference documentation.
                 </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {docs.map((d, i) => (
-                    <Button
-                      key={i} fullWidth variant="outlined" onClick={() => window.open(d.url, '_blank')}
-                      sx={{
-                        justifyContent: 'flex-start', py: 1.5, px: 2.5, background: themeCardBg, border: `1px solid ${themeBorderColor}`,
-                        borderRadius: '12px', textTransform: 'none', color: '#F7931E', borderColor: isDark ? 'rgba(247, 147, 30, 0.15)' : 'rgba(247, 147, 30, 0.15)',
-                        '&:hover': { background: 'rgba(247, 147, 30, 0.03)', borderColor: '#F7931E' }
-                      }}
-                    >
-                      <Box sx={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(247,147,30,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', mr: 1.5, fontSize: '0.85rem' }}>📎</Box>
-                      <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: themeTextColor }}>{d.title}</Typography>
-                    </Button>
-                  ))}
-                </Box>
+                <Button
+                  variant="contained" size="small"
+                  onClick={() => handleShowPayment(course)}
+                  sx={{ background: 'linear-gradient(135deg, #0B2E59 0%, #F7931E 100%)', color: '#fff', fontSize: '0.65rem', fontWeight: 900, px: 3, py: 1, borderRadius: '8px' }}
+                >
+                  🔒 UNLOCK RESOURCES
+                </Button>
               </Box>
-            )}
+            ) : (
+              <>
+                {refs.length > 0 && (
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, letterSpacing: '1.5px', display: 'block', mb: 2, fontSize: '0.65rem' }}>
+                      🔗 REFERENCE MATERIALS
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {refs.map((r, i) => (
+                        <Button
+                          key={i} fullWidth variant="outlined" onClick={() => window.open(r.url, '_blank')}
+                          sx={{
+                            justifyContent: 'flex-start', py: 1.5, px: 2.5, background: themeCardBg, border: `1px solid ${themeBorderColor}`,
+                            borderRadius: '12px', textTransform: 'none', color: themeTextColor,
+                            '&:hover': { background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(11, 46, 89, 0.04)', borderColor: course.color || '#F7931E' }
+                          }}
+                        >
+                          <Box sx={{ width: '28px', height: '28px', borderRadius: '8px', background: `${course.color || '#F7931E'}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', mr: 1.5, fontSize: '0.85rem' }}>🔗</Box>
+                          <Typography sx={{ fontSize: '0.75rem', fontWeight: 700 }}>{r.title}</Typography>
+                        </Button>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
 
-            {refs.length === 0 && docs.length === 0 && (
-              <Box sx={{ py: 6, textAlign: 'center', color: themeTextSec, border: `1px dashed ${themeBorderColor}`, borderRadius: '16px' }}>
-                📦 Resources are being compiled.
-              </Box>
+                {docs.length > 0 && (
+                  <Box>
+                    <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, letterSpacing: '1.5px', display: 'block', mb: 2, fontSize: '0.65rem' }}>
+                      📄 DOCUMENTATION & GUIDES
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {docs.map((d, i) => (
+                        <Button
+                          key={i} fullWidth variant="outlined" onClick={() => window.open(d.url, '_blank')}
+                          sx={{
+                            justifyContent: 'flex-start', py: 1.5, px: 2.5, background: themeCardBg, border: `1px solid ${themeBorderColor}`,
+                            borderRadius: '12px', textTransform: 'none', color: '#F7931E', borderColor: isDark ? 'rgba(247, 147, 30, 0.15)' : 'rgba(247, 147, 30, 0.15)',
+                            '&:hover': { background: 'rgba(247, 147, 30, 0.03)', borderColor: '#F7931E' }
+                          }}
+                        >
+                          <Box sx={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(247,147,30,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', mr: 1.5, fontSize: '0.85rem' }}>📎</Box>
+                          <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: themeTextColor }}>{d.title}</Typography>
+                        </Button>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+
+                {refs.length === 0 && docs.length === 0 && (
+                  <Box sx={{ py: 6, textAlign: 'center', color: themeTextSec, border: `1px dashed ${themeBorderColor}`, borderRadius: '16px' }}>
+                    📦 Resources are being compiled.
+                  </Box>
+                )}
+              </>
             )}
           </Box>
         )}
@@ -875,6 +929,54 @@ export default function Courses({ state, setView }) {
               >
                 CANCEL
               </Button>
+            </Box>
+          </Box>
+        )}
+      </Dialog>
+
+      {/* Video Player Modal */}
+      <Dialog
+        open={!!activeVideo}
+        onClose={() => setActiveVideo(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: { 
+            borderRadius: '24px', 
+            overflow: 'hidden', 
+            bgcolor: isDark ? '#0f172a' : '#ffffff',
+            border: `1px solid ${themeBorderColor}` 
+          }
+        }}
+      >
+        {activeVideo && (
+          <Box sx={{ position: 'relative', background: '#000' }}>
+            <IconButton
+              onClick={() => setActiveVideo(null)}
+              sx={{
+                position: 'absolute', top: 12, right: 12, zIndex: 10,
+                color: '#fff', bgcolor: 'rgba(0,0,0,0.5)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+            <Box sx={{ position: 'relative', pb: '56.25%', height: 0 }}>
+              <iframe
+                src={`https://www.youtube.com/embed/${activeVideo.ytId}?autoplay=1`}
+                title={activeVideo.title}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </Box>
+            <Box sx={{ p: 3, bgcolor: modalPaperBg }}>
+              <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, fontSize: '0.6rem', letterSpacing: '1px' }}>
+                NOW PLAYING · {activeVideo.duration}
+              </Typography>
+              <Typography variant="h6" sx={{ color: themeTextColor, fontWeight: 800, mt: 0.5, fontFamily: "'Outfit', sans-serif" }}>
+                {activeVideo.title}
+              </Typography>
             </Box>
           </Box>
         )}
