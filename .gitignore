@@ -8,3 +8,8 @@ db.json
 .firebase
 .DS_Store
 *.log
+
+serviceAccountKey.json
+list-db-courses.cjs
+update-courses.cjs
+

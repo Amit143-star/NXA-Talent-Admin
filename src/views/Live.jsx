@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Card, CardContent, Button, TextField } from '@mui/material';
-import { syncPull, syncPush } from '../utils/sync';
 
 export default function Live({ state }) {
   const isSuper = state.role === 'admin' && state.roleType === 'super';
   const isMax = state.role === 'admin' && state.roleType === 'max';
-  const isExecutive = isMax;
+  const isExecutive = isMax || isSuper;
 
   const [liveData, setLiveData] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nxa_live_broadcast')) || { active: false }; } catch(e) { return { active: false }; }
@@ -19,49 +18,22 @@ export default function Live({ state }) {
     let unsubscribe;
     let timer;
 
-    const setupSync = async () => {
-      const isFirebaseActive = typeof window !== 'undefined' && window.firebase && window.firebase.apps.length > 0;
-      
-      if (isFirebaseActive) {
-        try {
-          const db = window.firebase.firestore();
-          unsubscribe = db.collection('config').doc('live_broadcast').onSnapshot((doc) => {
-            if (doc.exists) {
-              const data = doc.data();
-              setLiveData(data);
-              window.originalSetItem.call(localStorage, 'nxa_live_broadcast', JSON.stringify(data));
-              if (!isExecutive) {
-                setTopic(data.topic || '');
-                setLink(data.link || '');
-              }
-            }
-          });
-        } catch (e) {
-          console.warn("Firebase snapshot subscribe failed:", e);
-        }
-      } else {
-        const fetchInitial = async () => {
-          const data = await syncPull('nxa_live_broadcast');
-          if (data) {
+    const setupSync = () => {
+      try {
+        const db = window.firebase.firestore();
+        unsubscribe = db.collection('config').doc('live_broadcast').onSnapshot((doc) => {
+          if (doc.exists) {
+            const data = doc.data();
             setLiveData(data);
+            localStorage.setItem('nxa_live_broadcast', JSON.stringify(data));
             if (!isExecutive) {
               setTopic(data.topic || '');
               setLink(data.link || '');
             }
           }
-        };
-        fetchInitial();
-
-        if (!isExecutive) {
-          timer = setInterval(async () => {
-            const data = await syncPull('nxa_live_broadcast');
-            if (data) {
-              setLiveData(data);
-              setTopic(data.topic || '');
-              setLink(data.link || '');
-            }
-          }, 4000);
-        }
+        });
+      } catch (e) {
+        console.warn("Firebase snapshot subscribe failed:", e);
       }
     };
 
@@ -78,14 +50,12 @@ export default function Live({ state }) {
     
     const updated = { active: true, topic: topic.trim(), link: link.trim() };
     setLiveData(updated);
-    syncPush('nxa_live_broadcast', updated);
+    localStorage.setItem('nxa_live_broadcast', JSON.stringify(updated));
 
-    if (typeof window.firebase !== 'undefined') {
-      try {
-        window.firebase.firestore().collection('config').doc('live_broadcast').set(updated);
-      } catch(e) {
-        console.warn(e);
-      }
+    try {
+      window.firebase.firestore().collection('config').doc('live_broadcast').set(updated);
+    } catch(e) {
+      console.warn(e);
     }
     alert("BROADCAST COMMENCED: Transmission active.");
   };
@@ -93,16 +63,14 @@ export default function Live({ state }) {
   const handleStopLive = () => {
     const updated = { active: false, topic: '', link: '' };
     setLiveData(updated);
-    syncPush('nxa_live_broadcast', updated);
+    localStorage.setItem('nxa_live_broadcast', JSON.stringify(updated));
     setTopic('');
     setLink('');
 
-    if (typeof window.firebase !== 'undefined') {
-      try {
-        window.firebase.firestore().collection('config').doc('live_broadcast').set(updated);
-      } catch(e) {
-        console.warn(e);
-      }
+    try {
+      window.firebase.firestore().collection('config').doc('live_broadcast').set(updated);
+    } catch(e) {
+      console.warn(e);
     }
     alert("TRANSMISSION TERMINATED.");
   };

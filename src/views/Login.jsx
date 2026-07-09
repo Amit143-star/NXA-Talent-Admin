@@ -1,51 +1,46 @@
 import React, { useState } from 'react';
 import { 
-  Box, Card, CardContent, TextField, Button, Typography, 
-  Select, MenuItem, FormControl, InputLabel, Link 
+  Box, Card, CardContent, TextField, Button, Typography, Alert
 } from '@mui/material';
+import { signIn, getUserRole, signOut } from '../utils/auth';
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    
-    const emailRaw = email.trim();
-    const emailKeyVal = emailRaw.toLowerCase().trim();
-    const passkey = pass.trim();
+    setError('');
     
     try {
-      // 1. Direct role verification
-      if (emailKeyVal === 'nxasupertalent@gmail.com' && passkey === 'NXA1426') {
-        onLogin({ name: 'Super Admin', email: emailRaw }, 'admin', 'super');
-        setSubmitting(false);
-        return;
-      } else if (emailKeyVal === 'nxamaxtalent@gmail.com' && passkey === 'NXA1526') {
-        onLogin({ name: 'Max Admin', email: emailRaw }, 'admin', 'max');
-        setSubmitting(false);
-        return;
-      } else if (emailKeyVal === 'nxacentertalent@gmail.com' && passkey === 'NXA1626') {
-        onLogin({ name: 'Center Admin', email: emailRaw }, 'admin', 'center');
+      // Admin Login via Firebase Auth
+      const user = await signIn(email, pass);
+      const { role, roleType } = await getUserRole(user);
+
+      if (role !== 'admin') {
+        setError("Student access is restricted to the Student Portal.");
+        await signOut();
         setSubmitting(false);
         return;
       }
 
-      // 2. Fallback check for dynamically updated password settings
-      let adminRoles = {};
-      try { adminRoles = JSON.parse(localStorage.getItem('nxa_admin_roles')) || {}; } catch(e) { adminRoles = {}; }
-      const matchedAdmin = adminRoles[emailKeyVal];
-
-      if (matchedAdmin && matchedAdmin.pass === passkey) {
-        onLogin({ name: matchedAdmin.name || 'Admin', email: emailRaw }, 'admin', matchedAdmin.type);
-      } else {
-        alert("ACCESS KEY DENIED: Unauthorized Admin credentials.");
-      }
+      onLogin(user, 'admin', roleType);
     } catch (err) {
-      console.error("Login logic error:", err);
-      alert("System access failure.");
+      console.error("Login error:", err);
+      
+      const errorMessages = {
+        'auth/user-not-found': 'No admin account found with this email. Contact the system administrator.',
+        'auth/wrong-password': 'Incorrect access key. Please try again.',
+        'auth/invalid-credential': 'Invalid credentials. Please try again.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/too-many-requests': 'Too many attempts. Please wait a moment.',
+        'auth/network-request-failed': 'Network error. Please check your connection.'
+      };
+      
+      setError(errorMessages[err.code] || err.message || 'Authentication failed. Please try again.');
     }
     setSubmitting(false);
   };
@@ -74,16 +69,27 @@ export default function Login({ onLogin }) {
               <Box component="span" sx={{ color: '#0B2E59' }}>NXA</Box>
               <Box component="span" sx={{ color: '#F7931E', fontWeight: 300, letterSpacing: '2px', ml: 1 }}>TALENT</Box>
             </Typography>
-            <Typography variant="subtitle2" sx={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' }}>
-              ADMIN COMMAND ACCESS
+            <Typography variant="subtitle2" sx={{ fontSize: '0.65rem', color: '#ff4545', fontWeight: 900, letterSpacing: '2px', textTransform: 'uppercase' }}>
+              ADMIN COMMAND PORTAL
             </Typography>
           </Box>
+
+          {error && (
+            <Box sx={{ 
+              mb: 2.5, p: 1.5, borderRadius: '10px', 
+              background: 'rgba(255, 69, 69, 0.05)', 
+              border: '1px solid rgba(255, 69, 69, 0.15)',
+              color: '#dc2626', fontSize: '0.75rem', fontWeight: 600
+            }}>
+              {error}
+            </Box>
+          )}
 
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label="ADMIN KEY"
-              type="text"
+              label="ADMIN KEY (EMAIL)"
+              type="email"
               required
               variant="outlined"
               value={email}
@@ -128,13 +134,9 @@ export default function Login({ onLogin }) {
                 }
               }}
             >
-              {submitting ? 'PROCESSING...' : 'SYSTEM ACCESS'}
+            {submitting ? 'PROCESSING...' : 'AUTHORIZE COMMAND ACCESS'}
             </Button>
           </form>
-
-          <Box sx={{ textAlign: 'center', mt: 4, fontSize: '0.75rem', color: '#64748b' }}>
-            Restricted System. Unauthorized attempts will be flagged.
-          </Box>
         </CardContent>
       </Card>
     </Box>

@@ -4,22 +4,6 @@ import App from './App';
 import './index.css';
 import './firebaseConfig';
 
-// Expose original setItem globally to allow silent local writes
-window.originalSetItem = localStorage.setItem;
-
-localStorage.setItem = function(key, value) {
-  window.originalSetItem.apply(this, arguments);
-  if (key.startsWith('nxa_')) {
-    const isApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.platform !== 'web';
-    // __BACKEND_IP__ is defined globally by Vite at build time
-    const host = isApp ? __BACKEND_IP__ : window.location.hostname;
-    fetch(`http://${host}:3001/api/set`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value })
-    }).catch(() => {});
-  }
-};
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 

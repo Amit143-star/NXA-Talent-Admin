@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { auth } from './firebaseConfig';
+import { getUserRole, signOut as authSignOut } from './utils/auth';
 import { 
   Box, AppBar, Toolbar, IconButton, Typography, Drawer, 
   List, ListItem, ListItemButton, ListItemIcon, ListItemText, 
@@ -36,10 +38,8 @@ import Projects from './views/Projects';
 import Internships from './views/Internships';
 import Courses from './views/Courses';
 import CourseAdmin from './views/CourseAdmin';
-import Leetcode from './views/Leetcode';
 import Live from './views/Live';
 import Notifications from './views/Notifications';
-import AiCoach from './views/AiCoach';
 import Leaderboard from './views/Leaderboard';
 import AdminManagement from './views/AdminManagement';
 
@@ -49,7 +49,7 @@ export default function App() {
   
   // App Global State
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState('admin');
+  const [role, setRole] = useState(null);
   const [roleType, setRoleType] = useState(null);
   const [view, setView] = useState('home');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -67,180 +67,138 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Initialize session and sync all databases from Firebase or local sync server
+  // Initialize session via Firebase Auth and setup Firestore real-time listeners
   useEffect(() => {
-    // 1. Initialize session from LocalStorage immediately for instant boot
-    try {
-      const savedUser = localStorage.getItem('nxa_active_session');
-      const savedRole = localStorage.getItem('nxa_active_role') || 'student';
-      const savedRoleType = localStorage.getItem('nxa_active_role_type') || null;
-
-      if (savedUser && savedUser !== 'undefined' && savedUser !== 'null') {
-        const isApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.platform !== 'web';
+    // 1. Listen for Firebase Auth changes
+    const unsubAuth = auth.onAuthStateChanged(async (firebaseUser) => {
+      if (firebaseUser) {
+        // User is logged in — determine role
+        const { role: userRole, roleType: userRoleType } = await getUserRole(firebaseUser);
         
-        if (savedRole === 'admin') {
-          setUser(JSON.parse(savedUser));
-          setRole('admin');
-          setRoleType(savedRoleType);
-        } else if (savedRole === 'student') {
-          // Clear student session on admin portal
-          localStorage.removeItem('nxa_active_session');
-          localStorage.removeItem('nxa_active_role');
-          localStorage.removeItem('nxa_active_role_type');
+        if (userRole !== 'admin') {
+          // Reject students on admin portal
+          await authSignOut();
+          setUser(null);
+          setRole(null);
+          setRoleType(null);
+        } else {
+          firebaseUser.name = firebaseUser.displayName || firebaseUser.email.split('@')[0];
+          setUser(firebaseUser);
+          setRole(userRole);
+          setRoleType(userRoleType);
         }
+      } else {
+        setUser(null);
+        setRole(null);
+        setRoleType(null);
       }
-    } catch (e) {
-      console.warn("State initialization failed:", e);
-    }
-    setInitialized(true);
+      setInitialized(true);
+    });
 
-    // 2. Setup real-time listeners or polling interval
-    const isFirebaseActive = typeof window !== 'undefined' && window.firebase && window.firebase.apps.length > 0;
-    const writeSilent = window.originalSetItem || localStorage.setItem;
-    
+    // 2. Setup Firestore snapshot listeners
     let unsubscribers = [];
-    let pollInterval = null;
 
-    if (isFirebaseActive) {
-      try {
-        const db = window.firebase.firestore();
-        
-        const subscribeCollection = (colName, storageKey) => {
-          return db.collection(colName).onSnapshot((snap) => {
-            const list = [];
-            const objMap = {};
-            snap.forEach((doc) => {
-              const data = doc.data();
-              list.push(data);
-              objMap[doc.id] = data;
-            });
-            
-            const finalData = storageKey === 'nxa_student_profiles' ? objMap : list;
-            writeSilent.call(localStorage, storageKey, JSON.stringify(finalData));
-            
-            // Dispatch event to update active views
-            window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
-              detail: { key: storageKey, data: finalData } 
-            }));
-          }, (err) => {
-            console.warn(`Firestore snapshot sync failed for ${colName}:`, err);
-          });
-        };
-
-        unsubscribers.push(subscribeCollection('profiles', 'nxa_student_profiles'));
-        unsubscribers.push(subscribeCollection('courses', 'nxa_system_courses'));
-        unsubscribers.push(subscribeCollection('projects', 'nxa_industrial_projects'));
-        unsubscribers.push(subscribeCollection('internships', 'nxa_internship_matrix'));
-        unsubscribers.push(subscribeCollection('users', 'nxa_users'));
-
-        // Alerts (Notifications)
-        unsubscribers.push(db.collection('broadcasts').onSnapshot((snap) => {
-          const list = [];
-          snap.forEach((doc) => {
-            list.push(doc.data());
-          });
-          list.sort((a, b) => b.id.localeCompare(a.id));
-          writeSilent.call(localStorage, 'nxa_system_alerts', JSON.stringify(list));
-          window.dispatchEvent(new CustomEvent('nxa_db_updated', {
-            detail: { key: 'nxa_system_alerts', data: list }
-          }));
-        }, (err) => console.warn("broadcasts listener failed:", err)));
-
-        // Configs
-        unsubscribers.push(db.collection('config').doc('live_broadcast').onSnapshot((doc) => {
-          if (doc.exists) {
-            const data = doc.data();
-            writeSilent.call(localStorage, 'nxa_live_broadcast', JSON.stringify(data));
-            window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
-              detail: { key: 'nxa_live_broadcast', data } 
-            }));
-          }
-        }));
-
-        unsubscribers.push(db.collection('config').doc('attendance_session').onSnapshot((doc) => {
-          if (doc.exists) {
-            const data = doc.data();
-            writeSilent.call(localStorage, 'nxa_attendance_session', JSON.stringify(data));
-            window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
-              detail: { key: 'nxa_attendance_session', data } 
-            }));
-          }
-        }));
-
-      } catch (e) {
-        console.warn("Firebase snapshot subscription initialization failed:", e);
-      }
-    } else {
-      // Fallback polling for Express sync server
-      const isApp = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.platform !== 'web';
-      const host = isApp ? __BACKEND_IP__ : window.location.hostname;
+    try {
+      const db = window.firebase.firestore();
       
-      const fetchAndDispatch = async () => {
-        try {
-          const res = await fetch(`http://${host}:3001/api/get_all`);
-          if (res.ok) {
-            const dbVal = await res.json();
-            for (const key in dbVal) {
-              if (key.startsWith('nxa_') && dbVal[key]) {
-                const localVal = localStorage.getItem(key);
-                if (localVal !== dbVal[key]) {
-                  writeSilent.call(localStorage, key, dbVal[key]);
-                  let parsed = dbVal[key];
-                  try { parsed = JSON.parse(dbVal[key]); } catch(e) {}
-                  window.dispatchEvent(new CustomEvent('nxa_db_updated', {
-                    detail: { key, data: parsed }
-                  }));
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Initial sync pull / polling failed:", e);
-        }
+      const subscribeCollection = (colName, storageKey) => {
+        return db.collection(colName).onSnapshot((snap) => {
+          const list = [];
+          const objMap = {};
+          snap.forEach((doc) => {
+            const data = doc.data();
+            list.push(data);
+            objMap[doc.id] = data;
+          });
+          
+          const finalData = storageKey === 'nxa_student_profiles' ? objMap : list;
+          localStorage.setItem(storageKey, JSON.stringify(finalData));
+          
+          // Dispatch event to update active views
+          window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
+            detail: { key: storageKey, data: finalData } 
+          }));
+        }, (err) => {
+          console.warn(`Firestore snapshot sync failed for ${colName}:`, err);
+        });
       };
 
-      fetchAndDispatch(); // Run once immediately
-      pollInterval = setInterval(fetchAndDispatch, 4000);
+      unsubscribers.push(subscribeCollection('profiles', 'nxa_student_profiles'));
+      unsubscribers.push(subscribeCollection('courses', 'nxa_system_courses'));
+      unsubscribers.push(subscribeCollection('projects', 'nxa_industrial_projects'));
+      unsubscribers.push(subscribeCollection('internships', 'nxa_internship_matrix'));
+      unsubscribers.push(subscribeCollection('users', 'nxa_users'));
+
+      // Alerts (Notifications)
+      unsubscribers.push(db.collection('broadcasts').onSnapshot((snap) => {
+        const list = [];
+        snap.forEach((doc) => {
+          list.push(doc.data());
+        });
+        list.sort((a, b) => b.id.localeCompare(a.id));
+        localStorage.setItem('nxa_system_alerts', JSON.stringify(list));
+        window.dispatchEvent(new CustomEvent('nxa_db_updated', {
+          detail: { key: 'nxa_system_alerts', data: list }
+        }));
+      }, (err) => console.warn("broadcasts listener failed:", err)));
+
+      // Configs
+      unsubscribers.push(db.collection('config').doc('live_broadcast').onSnapshot((doc) => {
+        if (doc.exists) {
+          const data = doc.data();
+          localStorage.setItem('nxa_live_broadcast', JSON.stringify(data));
+          window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
+            detail: { key: 'nxa_live_broadcast', data } 
+          }));
+        }
+      }));
+
+      unsubscribers.push(db.collection('config').doc('attendance_session').onSnapshot((doc) => {
+        if (doc.exists) {
+          const data = doc.data();
+          localStorage.setItem('nxa_attendance_session', JSON.stringify(data));
+          window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
+            detail: { key: 'nxa_attendance_session', data } 
+          }));
+        }
+      }));
+
+      unsubscribers.push(db.collection('config').doc('payment_config').onSnapshot((doc) => {
+        if (doc.exists) {
+          const data = doc.data();
+          localStorage.setItem('nxa_payment_config', JSON.stringify(data));
+          window.dispatchEvent(new CustomEvent('nxa_db_updated', { 
+            detail: { key: 'nxa_payment_config', data } 
+          }));
+        }
+      }));
+
+    } catch (e) {
+      console.warn("Firebase snapshot subscription initialization failed:", e);
     }
 
     return () => {
+      unsubAuth();
       unsubscribers.forEach(unsub => { if (typeof unsub === 'function') unsub(); });
-      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 
-  const handleLogin = (userData, userRole, type = null) => {
-    if (userRole !== 'admin') {
-      alert("Unauthorized: Student credentials cannot access the Admin Portal.");
-      return;
-    }
-    setUser(userData);
-    setRole('admin');
+  const handleLogin = (firebaseUser, userRole, type = null) => {
+    // onAuthStateChanged will handle session state in real-time
+    setUser(firebaseUser);
+    setRole(userRole);
     setRoleType(type);
-
-    localStorage.setItem('nxa_active_session', JSON.stringify(userData));
-    localStorage.setItem('nxa_active_role', 'admin');
-    localStorage.setItem('nxa_active_role_type', type || '');
     setView('home');
-
-    // Cookie fallback
-    document.cookie = `nxa_active_session=${encodeURIComponent(JSON.stringify(userData))}; max-age=31536000; path=/; SameSite=Lax`;
-    document.cookie = `nxa_active_role=admin; max-age=31536000; path=/; SameSite=Lax`;
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (!confirm('Are you sure you want to logout?')) return;
-    setUser(null);
-    setRole('admin');
-    setRoleType(null);
+    try {
+      await authSignOut();
+    } catch (e) {
+      console.error('Logout failed:', e);
+    }
     setView('home');
-    
-    localStorage.removeItem('nxa_active_session');
-    localStorage.removeItem('nxa_active_role');
-    localStorage.removeItem('nxa_active_role_type');
-    
-    document.cookie = "nxa_active_session=; max-age=0; path=/";
-    document.cookie = "nxa_active_role=; max-age=0; path=/";
   };
 
   if (!initialized) {
@@ -270,55 +228,39 @@ export default function App() {
 
   // Navigation Items
   const getMenuItems = () => {
-    if (isStudent) {
+    if (roleType === 'super') {
+      // Super Admin: HEAD OF ALL — full access to every system module
+      return [
+        { text: 'Command Center', view: 'home', icon: <HomeIcon /> },
+        { text: 'Manage Admins', view: 'admin_mgmt', icon: <SettingsIcon /> },
+        { text: 'Student Profiles', view: 'student_mgmt', icon: <AnalyticsIcon /> },
+        { text: 'Attendance', view: 'attendance', icon: <CalendarMonthIcon /> },
+        { text: 'Broadcast Signals', view: 'notifications', icon: <NotificationsIcon /> },
+        { text: 'Course Matrix', view: 'courses', icon: <SchoolIcon /> },
+        { text: 'Live Stream', view: 'live', icon: <LiveTvIcon /> },
+        { text: 'Project Matrix', view: 'projects', icon: <FolderIcon /> },
+        { text: 'Internship Hub', view: 'internships', icon: <WorkIcon /> },
+        { text: 'Leaderboard', view: 'leaderboard', icon: <EmojiEventsIcon /> },
+      ];
+    } else if (roleType === 'max') {
+      // Max Admin: Course Matrix, Live Stream Control, Project Matrix, Leaderboard ONLY
       return [
         { text: 'Home', view: 'home', icon: <HomeIcon /> },
-        { text: 'Notifications', view: 'notifications', icon: <NotificationsIcon /> },
-        { text: 'Live Class', view: 'live', icon: <LiveTvIcon /> },
-        { text: 'AI Coach', view: 'ai_copilot', icon: <SmartToyIcon /> },
+        { text: 'Course Matrix', view: 'courses', icon: <SchoolIcon /> },
+        { text: 'Live Stream Control', view: 'live', icon: <LiveTvIcon /> },
+        { text: 'Project Matrix', view: 'projects', icon: <FolderIcon /> },
         { text: 'Leaderboard', view: 'leaderboard', icon: <EmojiEventsIcon /> },
-        { text: 'Coding Sandbox', view: 'leetcode', icon: <TerminalIcon /> },
-        { text: 'Attendance', view: 'attendance', icon: <CalendarMonthIcon /> },
-        { text: 'Projects', view: 'projects', icon: <FolderIcon /> },
-        { text: 'Internships', view: 'internships', icon: <WorkIcon /> },
-        { text: 'My Courses', view: 'courses', icon: <SchoolIcon /> },
-        { text: 'My Profile', view: 'self', icon: <PersonIcon /> },
       ];
     } else {
-      if (roleType === 'super') {
-        // Super Admin: HEAD OF ALL — full access to every system module
-        return [
-          { text: 'Command Center', view: 'home', icon: <HomeIcon /> },
-          { text: 'Manage Admins', view: 'admin_mgmt', icon: <SettingsIcon /> },
-          { text: 'Student Profiles', view: 'student_mgmt', icon: <AnalyticsIcon /> },
-          { text: 'Attendance', view: 'attendance', icon: <CalendarMonthIcon /> },
-          { text: 'Broadcast Signals', view: 'notifications', icon: <NotificationsIcon /> },
-          { text: 'Course Matrix', view: 'courses', icon: <SchoolIcon /> },
-          { text: 'Live Stream', view: 'live', icon: <LiveTvIcon /> },
-          { text: 'Project Matrix', view: 'projects', icon: <FolderIcon /> },
-          { text: 'Internship Hub', view: 'internships', icon: <WorkIcon /> },
-          { text: 'Leaderboard', view: 'leaderboard', icon: <EmojiEventsIcon /> },
-        ];
-      } else if (roleType === 'max') {
-        // Max Admin: Course Matrix, Live Stream Control, Project Matrix, Leaderboard ONLY
-        return [
-          { text: 'Home', view: 'home', icon: <HomeIcon /> },
-          { text: 'Course Matrix', view: 'courses', icon: <SchoolIcon /> },
-          { text: 'Live Stream Control', view: 'live', icon: <LiveTvIcon /> },
-          { text: 'Project Matrix', view: 'projects', icon: <FolderIcon /> },
-          { text: 'Leaderboard', view: 'leaderboard', icon: <EmojiEventsIcon /> },
-        ];
-      } else {
-        // Center Admin: Student Profile, Attendance, Broadcast Signals, Internship Hub, Leaderboard ONLY
-        return [
-          { text: 'Home', view: 'home', icon: <HomeIcon /> },
-          { text: 'Student Profiles', view: 'student_mgmt', icon: <AnalyticsIcon /> },
-          { text: 'Attendance', view: 'attendance', icon: <CalendarMonthIcon /> },
-          { text: 'Broadcast Signals', view: 'notifications', icon: <NotificationsIcon /> },
-          { text: 'Internship Hub', view: 'internships', icon: <WorkIcon /> },
-          { text: 'Leaderboard', view: 'leaderboard', icon: <EmojiEventsIcon /> },
-        ];
-      }
+      // Center Admin: Student Profile, Attendance, Broadcast Signals, Internship Hub, Leaderboard ONLY
+      return [
+        { text: 'Home', view: 'home', icon: <HomeIcon /> },
+        { text: 'Student Profiles', view: 'student_mgmt', icon: <AnalyticsIcon /> },
+        { text: 'Attendance', view: 'attendance', icon: <CalendarMonthIcon /> },
+        { text: 'Broadcast Signals', view: 'notifications', icon: <NotificationsIcon /> },
+        { text: 'Internship Hub', view: 'internships', icon: <WorkIcon /> },
+        { text: 'Leaderboard', view: 'leaderboard', icon: <EmojiEventsIcon /> },
+      ];
     }
   };
 
@@ -333,23 +275,18 @@ export default function App() {
     const stateObj = { user, role, roleType, view };
     
     // Scoped Navigation Security Route Protection
-    if (role === 'admin') {
-      if (roleType === 'super') {
-        // Super Admin has FULL access to everything
-        const allowed = ['home', 'student_mgmt', 'admin_mgmt', 'leaderboard', 'attendance', 'notifications', 'courses', 'course_admin', 'live', 'projects', 'internships'];
-        if (!allowed.includes(view)) return <Home state={stateObj} setView={setView} />;
-      } else if (roleType === 'max') {
-        // Max Admin: ONLY courses, live, projects, leaderboard
-        const allowed = ['home', 'courses', 'course_admin', 'live', 'projects', 'leaderboard'];
-        if (!allowed.includes(view)) return <Home state={stateObj} setView={setView} />;
-      } else if (roleType === 'center') {
-        // Center Admin: ONLY student profiles, attendance, notifications, internships, leaderboard
-        const allowed = ['home', 'student_mgmt', 'attendance', 'notifications', 'internships', 'leaderboard'];
-        if (!allowed.includes(view)) return <Home state={stateObj} setView={setView} />;
-      }
+    if (roleType === 'super') {
+      // Super Admin has FULL access to everything
+      const allowed = ['home', 'student_mgmt', 'admin_mgmt', 'leaderboard', 'attendance', 'notifications', 'courses', 'course_admin', 'live', 'projects', 'internships'];
+      if (!allowed.includes(view)) return <Home state={stateObj} setView={setView} />;
+    } else if (roleType === 'max') {
+      // Max Admin: ONLY courses, live, projects, leaderboard
+      const allowed = ['home', 'courses', 'course_admin', 'live', 'projects', 'leaderboard'];
+      if (!allowed.includes(view)) return <Home state={stateObj} setView={setView} />;
     } else {
-      const blockedForStudents = ['student_mgmt', 'admin_mgmt', 'course_admin'];
-      if (blockedForStudents.includes(view)) return <Home state={stateObj} setView={setView} />;
+      // Center Admin: ONLY student profiles, attendance, notifications, internships, leaderboard
+      const allowed = ['home', 'student_mgmt', 'attendance', 'notifications', 'internships', 'leaderboard'];
+      if (!allowed.includes(view)) return <Home state={stateObj} setView={setView} />;
     }
 
     switch (view) {
@@ -372,14 +309,10 @@ export default function App() {
         return <Courses state={stateObj} setView={setView} />;
       case 'course_admin':
         return <CourseAdmin state={stateObj} setView={setView} />;
-      case 'leetcode':
-        return <Leetcode state={stateObj} />;
       case 'live':
         return <Live state={stateObj} />;
       case 'notifications':
         return <Notifications state={stateObj} />;
-      case 'ai_copilot':
-        return <AiCoach state={stateObj} />;
       case 'leaderboard':
         return <Leaderboard state={stateObj} />;
       default:
@@ -582,13 +515,6 @@ export default function App() {
             }
           }}
         >
-          {/* Student Specific Flow */}
-          {isStudent && <BottomNavigationAction label="Home" value="home" icon={<HomeIcon sx={{ fontSize: '1.2rem' }} />} />}
-          {isStudent && <BottomNavigationAction label="Live" value="live" icon={<LiveTvIcon sx={{ fontSize: '1.2rem' }} />} />}
-          {isStudent && <BottomNavigationAction label="Code" value="leetcode" icon={<TerminalIcon sx={{ fontSize: '1.2rem' }} />} />}
-          {isStudent && <BottomNavigationAction label="Learn" value="courses" icon={<SchoolIcon sx={{ fontSize: '1.2rem' }} />} />}
-          {isStudent && <BottomNavigationAction label="Me" value="self" icon={<PersonIcon sx={{ fontSize: '1.2rem' }} />} />}
-
           {/* Admin Specific Flow - Super Admin */}
           {!isStudent && roleType === 'super' && [
             <BottomNavigationAction key="home" label="Home" value="home" icon={<HomeIcon sx={{ fontSize: '1.2rem' }} />} />,

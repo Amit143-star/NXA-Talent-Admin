@@ -1,0 +1,207 @@
+/* Immersive Dashboard CSS - Home View */
+
+/* CSS Variables */
+:root {
+  --neon-blue: #0ea5e9;
+  --neon-orange: #f97316;
+  --neon-green: #10b981;
+  --cyber-bg-dark: #030712;
+  --card-dark: rgba(17, 24, 39, 0.7);
+  --border-glow-dark: rgba(249, 115, 22, 0.15);
+  --border-glow-light: rgba(11, 46, 89, 0.08);
+}
+
+/* Animations */
+@keyframes glowPulse {
+  0% { box-shadow: 0 0 5px rgba(249, 115, 22, 0.2), inset 0 0 5px rgba(249, 115, 22, 0.1); }
+  50% { box-shadow: 0 0 20px rgba(249, 115, 22, 0.4), inset 0 0 10px rgba(249, 115, 22, 0.2); }
+  100% { box-shadow: 0 0 5px rgba(249, 115, 22, 0.2), inset 0 0 5px rgba(249, 115, 22, 0.1); }
+}
+
+@keyframes liveIndicator {
+  0% { transform: scale(0.9); opacity: 0.5; }
+  50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 15px #ef4444; }
+  100% { transform: scale(0.9); opacity: 0.5; }
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes floatElement {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+  100% { transform: translateY(0px); }
+}
+
+@keyframes countGlow {
+  0% { text-shadow: 0 0 5px rgba(249, 115, 22, 0.2); }
+  50% { text-shadow: 0 0 15px rgba(249, 115, 22, 0.6); }
+  100% { text-shadow: 0 0 5px rgba(249, 115, 22, 0.2); }
+}
+
+/* Cyber Dashboard Container */
+.cyber-dashboard {
+  animation: cardManifest 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Glassmorphism Cyber Cards */
+.cyber-card {
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.cyber-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: skewX(-25deg);
+  transition: 0.75s;
+}
+
+.cyber-card:hover::after {
+  left: 150%;
+}
+
+.cyber-card-dark {
+  background: var(--card-dark);
+  border: 1px solid rgba(249, 115, 22, 0.15);
+}
+
+.cyber-card-dark:hover {
+  border-color: rgba(249, 115, 22, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 15px rgba(249, 115, 22, 0.1);
+  transform: translateY(-4px);
+}
+
+.cyber-card-light {
+  background: rgba(11, 46, 89, 0.015);
+  border: 1px solid rgba(11, 46, 89, 0.08);
+}
+
+.cyber-card-light:hover {
+  border-color: rgba(11, 46, 89, 0.2);
+  box-shadow: 0 10px 30px rgba(11, 46, 89, 0.04);
+  transform: translateY(-4px);
+}
+
+/* Immersive Welcome Hero Panel */
+.hero-glow-panel-dark {
+  background: linear-gradient(135deg, rgba(17, 24, 39, 0.8), rgba(3, 7, 18, 0.95));
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  box-shadow: 0 0 25px rgba(249, 115, 22, 0.05), inset 0 0 15px rgba(249, 115, 22, 0.05);
+}
+
+.hero-glow-panel-light {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(11, 46, 89, 0.03));
+  border: 1px solid rgba(11, 46, 89, 0.1);
+  box-shadow: 0 10px 30px rgba(11, 46, 89, 0.04);
+}
+
+.hero-cgpa-pill {
+  backdrop-filter: blur(10px);
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.2) 0%, rgba(247, 147, 30, 0.08) 100%);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  padding: 6px 14px;
+  border-radius: 30px;
+}
+
+/* Cyber Progress Tracker */
+.dossier-progress-bg {
+  height: 6px;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(100, 116, 139, 0.15);
+}
+
+.dossier-progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f97316 0%, #3b82f6 50%, #10b981 100%);
+  background-size: 200% 200%;
+  animation: gradientShift 4s ease infinite;
+}
+
+/* Glowing Neon Indicator */
+.live-beacon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: liveIndicator 1.8s infinite;
+}
+
+/* Premium Badges Grid */
+.achievement-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: grayscale(80%);
+  opacity: 0.6;
+}
+
+.achievement-badge.unlocked {
+  filter: grayscale(0%);
+  opacity: 1;
+  animation: floatElement 4s ease-in-out infinite;
+}
+
+.achievement-badge.unlocked:hover {
+  transform: scale(1.15) rotate(5deg);
+  filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.4));
+}
+
+/* Skills Radar Glow */
+.radar-svg polygon {
+  transition: all 0.5s ease;
+}
+
+/* Study Column Widget */
+.study-column {
+  width: 10px;
+  border-radius: 8px;
+  background: rgba(100, 116, 139, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.study-column-fill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f97316 0%, #3b82f6 100%);
+}
+
+.study-column-active {
+  background: linear-gradient(180deg, #10b981 0%, #3b82f6 100%);
+}
+
+/* General Layout Utilities */
+.stat-display {
+  display: flex;
+  flex-direction: column;
+}
+
+.text-gradient-neon {
+  background: linear-gradient(90deg, #f97316 0%, #ef4444 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

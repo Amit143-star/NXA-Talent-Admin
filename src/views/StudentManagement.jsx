@@ -199,7 +199,16 @@ export default function StudentManagement({ state, setView }) {
     setEditCity(student.city || '');
     setEditState(student.state || '');
     setEditPhone(student.phone || '');
-    setEditCourses(student.assigned_courses || []);
+    
+    // Backwards compatibility mapping for legacy courses
+    const OLD_COURSE_MAP = {
+      '1': 'ai_ml_foundations',
+      '2': 'javascript_engineering',
+      '3': 'cybersecurity_ethical'
+    };
+    const rawCourses = student.assigned_courses || [];
+    setEditCourses(rawCourses.map(id => OLD_COURSE_MAP[id] || id));
+    
     setOpenEditDialog(true);
   };
 
@@ -731,12 +740,22 @@ export default function StudentManagement({ state, setView }) {
                   ASSIGNED COURSES
                 </Typography>
                 {selectedStudent.assigned_courses && selectedStudent.assigned_courses.length > 0 ? (
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    {selectedStudent.assigned_courses.map(c => (
-                      <Box key={c} sx={{ background: 'rgba(11, 46, 89, 0.05)', color: '#0B2E59', px: 2, py: 1, borderRadius: '20px', fontSize: '0.7rem', fontWeight: 900, border: '1px solid rgba(11, 46, 89, 0.2)' }}>
-                        {c}
-                      </Box>
-                    ))}
+                  <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                    {selectedStudent.assigned_courses.map(c => {
+                      const OLD_COURSE_MAP = {
+                        '1': 'ai_ml_foundations',
+                        '2': 'javascript_engineering',
+                        '3': 'cybersecurity_ethical'
+                      };
+                      const realId = OLD_COURSE_MAP[c] || c;
+                      const match = systemCourses.find(x => String(x.id) === String(realId));
+                      const title = match ? match.title : realId;
+                      return (
+                        <Box key={c} sx={{ background: 'rgba(11, 46, 89, 0.05)', color: '#0B2E59', px: 2, py: 0.8, borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800, border: '1px solid rgba(11, 46, 89, 0.15)' }}>
+                          📚 {title}
+                        </Box>
+                      );
+                    })}
                   </Box>
                 ) : (
                   <Typography variant="caption" sx={{ color: themeTextSec }}>No courses assigned yet.</Typography>

@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "nxa-talent"
-  }
+  },
+  "targets": {
+    "nxa-talent": {
+      "hosting": {
+        "admin": [
+          "nxa-talent-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

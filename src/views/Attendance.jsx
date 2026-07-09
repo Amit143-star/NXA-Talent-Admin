@@ -3,12 +3,11 @@ import {
   Box, Typography, Card, CardContent, Grid, Button, 
   TextField, List, ListItem, ListItemText, Alert 
 } from '@mui/material';
-import { syncPull } from '../utils/sync';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 export default function Attendance({ state }) {
-  const isAdmin = state.role === 'admin' && state.roleType === 'center';
+  const isAdmin = state.role === 'admin' && (state.roleType === 'center' || state.roleType === 'super');
   
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nxa_attendance_session')) || { active: false }; } catch(e) { return { active: false }; }

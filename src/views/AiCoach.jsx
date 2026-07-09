@@ -52,14 +52,15 @@ export default function AiCoach({ state }) {
 
   // Load initial welcome message
   useEffect(() => {
+    const firstName = (state.user?.name || state.user?.displayName || state.user?.email || 'Student').split(' ')[0];
     setMessages([
       {
         sender: 'ai',
-        text: `Salutations, ${state.user.name.split(' ')[0]}. I am the NXA Neural Study & Career Advisor. I have synchronized with your industrial dossier.\n\nType a question or select a quick-query action below to begin:`,
+        text: `Salutations, ${firstName}. I am the NXA Neural Study & Career Advisor. I have synchronized with your industrial dossier.\n\nType a question or select a quick-query action below to begin:`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ]);
-  }, [state.user.name]);
+  }, [state.user]);
 
   // Scroll messages
   useEffect(() => {

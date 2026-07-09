@@ -37,6 +37,8 @@ export default function CourseAdmin({ state, setView }) {
   const [newDomain, setNewDomain] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [newModules, setNewModules] = useState('');
+  const [newTests, setNewTests] = useState('');
   const [upiId, setUpiId] = useState(payConfig.upi || '');
   const [qrBase64, setQrBase64] = useState(payConfig.qr || '');
 
@@ -59,11 +61,22 @@ export default function CourseAdmin({ state, setView }) {
     reader.readAsDataURL(file);
   };
 
-  const handleSavePaymentConfig = () => {
+  const handleSavePaymentConfig = async () => {
     const conf = { ...payConfig, upi: upiId, qr: qrBase64 };
     setPayConfig(conf);
     localStorage.setItem('nxa_payment_config', JSON.stringify(conf));
-    alert("GATEWAY INITIALIZED: Uplink config cached.");
+    
+    if (typeof window.firebase !== 'undefined') {
+      try {
+        await window.firebase.firestore().collection('config').doc('payment_config').set(conf);
+        alert("✅ GATEWAY INITIALIZED: Configuration updated on the Cloud!");
+      } catch (err) {
+        console.error(err);
+        alert("Saved locally, but failed to upload to Firestore: " + err.message);
+      }
+    } else {
+      alert("GATEWAY INITIALIZED: Configuration cached locally.");
+    }
   };
 
   const handleCreateCourse = () => {
@@ -75,6 +88,8 @@ export default function CourseAdmin({ state, setView }) {
       domain: newDomain.trim(),
       price: newPrice || '999',
       desc: newDesc.trim(),
+      modules: parseInt(newModules) || 0,
+      tests: parseInt(newTests) || 0,
       videos: [],
       refs: [],
       docs: []
@@ -115,16 +130,26 @@ export default function CourseAdmin({ state, setView }) {
     }
   };
 
-  const handleFastSetPrice = (id, priceVal) => {
-    const updated = courses.map(c => {
-      if (c.id === id) {
-        return { ...c, price: priceVal };
-      }
-      return c;
-    });
+  const handleFastSetPrice = async (id, priceVal) => {
+    const targetCourse = courses.find(c => c.id === id);
+    if (!targetCourse) return;
+
+    const updatedCourse = { ...targetCourse, price: priceVal };
+    const updated = courses.map(c => c.id === id ? updatedCourse : c);
     setCourses(updated);
     localStorage.setItem('nxa_system_courses', JSON.stringify(updated));
-    alert(`Price updated successfully.`);
+
+    if (typeof window.firebase !== 'undefined') {
+      try {
+        await window.firebase.firestore().collection('courses').doc(id).set(updatedCourse, { merge: true });
+        alert(`✅ Price updated successfully on the Cloud!`);
+      } catch (e) {
+        console.error("Failed to sync course price:", e);
+        alert(`Price updated locally, but failed to sync to Cloud: ${e.message}`);
+      }
+    } else {
+      alert(`Price updated locally.`);
+    }
   };
 
   // Add course items
@@ -212,15 +237,26 @@ export default function CourseAdmin({ state, setView }) {
     const emailKey = log.email.toLowerCase().trim();
     const student = profiles[emailKey] || {};
     
-    // Add to paid courses
-    const paid = student.paid_courses || [];
-    if (!paid.includes(log.courseId)) {
-      paid.push(log.courseId);
+    let updatedProfile = {};
+    if (log.projectId) {
+      // It's a project lock verification!
+      const unlockedProjects = student.unlockedProjects || [];
+      const projSlug = log.projectId;
+      if (!unlockedProjects.includes(projSlug)) {
+        unlockedProjects.push(projSlug);
+      }
+      const pendingProjects = (student.pendingProjects || []).filter(slug => slug !== projSlug);
+      updatedProfile = { ...student, unlockedProjects, pendingProjects };
+    } else {
+      // It's a course enrollment verification!
+      const paid = student.paid_courses || [];
+      if (!paid.includes(log.courseId)) {
+        paid.push(log.courseId);
+      }
+      const pending = (student.pending_courses || []).filter(id => id !== log.courseId);
+      updatedProfile = { ...student, paid_courses: paid, pending_courses: pending };
     }
-    // Remove from pending courses
-    const pending = (student.pending_courses || []).filter(id => id !== log.courseId);
 
-    const updatedProfile = { ...student, paid_courses: paid, pending_courses: pending };
     const updatedProfiles = { ...profiles, [emailKey]: updatedProfile };
     setProfiles(updatedProfiles);
     localStorage.setItem('nxa_student_profiles', JSON.stringify(updatedProfiles));
@@ -240,7 +276,7 @@ export default function CourseAdmin({ state, setView }) {
       }
     }
 
-    alert("VERIFICATION GRANTED: Course manifest unlocked for student.");
+    alert("VERIFICATION GRANTED: Workspace successfully unlocked.");
   };
 
   return (
@@ -307,21 +343,21 @@ export default function CourseAdmin({ state, setView }) {
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: '#0B2E59', fontWeight: 900, mb: 0.5, fontSize: '0.7rem' }}>
                 <span>{log.email}</span>
-                <span>₹{log.price}</span>
+                <span>₹{log.amount || log.price}</span>
               </Box>
               <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: '#0B2E59' }}>
-                ENROLLED: {log.courseTitle}
+                {log.projectId ? `PROJECT: ${log.projectTitle || log.projectId}` : `COURSE: ${log.courseTitle}`}
               </Typography>
               <Typography sx={{ fontSize: '0.6rem', color: '#F7931E', fontFamily: 'monospace', mt: 0.5 }}>
                 UTR: {log.utr}
               </Typography>
               
-              {log.proof && (
+              {(log.receipt || log.proof) && (
                 <Box 
-                  onClick={() => window.open(log.proof, '_blank')}
+                  onClick={() => window.open(log.receipt || log.proof, '_blank')}
                   sx={{ mt: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1, background: 'rgba(11, 46, 89, 0.03)', p: 1, borderRadius: '8px', width: 'fit-content' }}
                 >
-                  <Box component="img" src={log.proof} sx={{ width: 35, height: 35, objectFit: 'cover', borderRadius: '4px' }} />
+                  <Box component="img" src={log.receipt || log.proof} sx={{ width: 35, height: 35, objectFit: 'cover', borderRadius: '4px' }} />
                   <Typography sx={{ fontSize: '0.55rem', fontWeight: 900, color: '#0B2E59' }}>VIEW PROOF IMAGE</Typography>
                 </Box>
               )}
@@ -380,6 +416,16 @@ export default function CourseAdmin({ state, setView }) {
               fullWidth size="small" type="number" placeholder="Enrollment Price (₹)" value={newPrice} onChange={(e) => setNewPrice(e.target.value)}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', background: '#fff' } }}
             />
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField 
+                fullWidth size="small" type="number" placeholder="Number of Modules (e.g. 12)" value={newModules} onChange={(e) => setNewModules(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', background: '#fff' } }}
+              />
+              <TextField 
+                fullWidth size="small" type="number" placeholder="Number of Tests (e.g. 4)" value={newTests} onChange={(e) => setNewTests(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', background: '#fff' } }}
+              />
+            </Box>
             <TextField 
               fullWidth multiline rows={3} placeholder="Course Description..." value={newDesc} onChange={(e) => setNewDesc(e.target.value)}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', background: '#fff' } }}
@@ -497,7 +543,7 @@ export default function CourseAdmin({ state, setView }) {
               <Box>
                 <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748b' }}>MANIFEST STATS:</Typography>
                 <Typography variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5, color: '#0B2E59' }}>
-                  📹 {(editingCourse.videos || []).length} Video Lessons | 🔗 {(editingCourse.refs || []).length} Refs | 📄 {(editingCourse.docs || []).length} Docs
+                  📹 {(editingCourse.videos || []).length} Video Lessons | 📚 {editingCourse.modules || 0} Modules | 📝 {editingCourse.tests || 0} Tests | 🔗 {(editingCourse.refs || []).length} Refs | 📄 {(editingCourse.docs || []).length} Docs
                 </Typography>
               </Box>
 

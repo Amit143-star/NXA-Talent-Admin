@@ -39,7 +39,7 @@ const NXA_ELITE_QUESTIONS = [
 ];
 
 export default function Internships({ state, setView }) {
-  const isCenter = state.role === 'admin' && state.roleType === 'center';
+  const isCenter = state.role === 'admin' && (state.roleType === 'center' || state.roleType === 'super');
   
   // States
   const [viewState, setViewState] = useState('hubs'); // 'hubs', 'quiz', 'pass', 'certificate'
