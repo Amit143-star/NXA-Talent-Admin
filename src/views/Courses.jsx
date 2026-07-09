@@ -20,6 +20,9 @@ export default function Courses({ state, setView }) {
   const [activeDetailTab, setActiveDetailTab] = useState(0);
   const [expandedModule, setExpandedModule] = useState(null);
   const [activeVideo, setActiveVideo] = useState(null);
+  const [activeTest, setActiveTest] = useState(null);
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [testResult, setTestResult] = useState(null);
   const [utrId, setUtrId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [submittingPay, setSubmittingPay] = useState(false);
@@ -536,7 +539,15 @@ export default function Courses({ state, setView }) {
                     </Box>
                     <Button 
                       variant="outlined" size="small" 
-                      onClick={() => { if (!isPaid) handleShowPayment(course); }}
+                      onClick={() => { 
+                        if (isPaid) {
+                          setActiveTest({ test, course });
+                          setSelectedAnswers({});
+                          setTestResult(null);
+                        } else {
+                          handleShowPayment(course);
+                        }
+                      }}
                       sx={{ borderColor: isPaid ? '#F7931E' : themeTextSec, color: isPaid ? '#F7931E' : themeTextSec, fontSize: '0.65rem', fontWeight: 800 }}
                     >
                       {isPaid ? 'START' : '🔒 UNLOCK'}
@@ -982,6 +993,161 @@ export default function Courses({ state, setView }) {
         )}
       </Dialog>
 
+      {/* Test/Assessment Modal */}
+      <Dialog
+        open={!!activeTest}
+        onClose={() => setActiveTest(null)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: '24px', p: 3.5, bgcolor: modalPaperBg, border: `1px solid ${themeBorderColor}` }
+        }}
+      >
+        {activeTest && (
+          <Box>
+            <DialogTitle sx={{ p: 0, color: '#F7931E', fontWeight: 900, fontSize: '1.2rem', fontFamily: "'Outfit', sans-serif" }}>
+              📝 {activeTest.test.title}
+            </DialogTitle>
+            <Typography variant="caption" sx={{ color: themeTextSec, fontWeight: 700, display: 'block', mb: 3 }}>
+              COURSE: {activeTest.course.title}
+            </Typography>
+
+            {testResult === null ? (
+              <Box>
+                {/* Render questions */}
+                {(COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions).map((qObj, qIdx) => (
+                  <Box key={qIdx} sx={{ mb: 3, p: 2, background: 'rgba(0,0,0,0.01)', border: `1px solid ${themeBorderColor}`, borderRadius: '14px' }}>
+                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: themeTextColor, mb: 1.5 }}>
+                      Q{qIdx + 1}: {qObj.q}
+                    </Typography>
+                    <Box sx={{ display: 'grid', gap: 1 }}>
+                      {qObj.options.map((opt, oIdx) => {
+                        const isSelected = selectedAnswers[qIdx] === oIdx;
+                        return (
+                          <Button
+                            key={oIdx}
+                            variant="outlined"
+                            onClick={() => setSelectedAnswers(prev => ({ ...prev, [qIdx]: oIdx }))}
+                            sx={{
+                              justifyContent: 'flex-start',
+                              textTransform: 'none',
+                              fontSize: '0.72rem',
+                              py: 1,
+                              borderRadius: '10px',
+                              color: isSelected ? '#F7931E' : themeTextColor,
+                              borderColor: isSelected ? '#F7931E' : themeBorderColor,
+                              background: isSelected ? 'rgba(247,147,30,0.05)' : 'transparent',
+                              '&:hover': {
+                                borderColor: '#F7931E',
+                                background: 'rgba(247,147,30,0.02)'
+                              }
+                            }}
+                          >
+                            {opt}
+                          </Button>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                ))}
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={() => {
+                    const qList = COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions;
+                    let correctCount = 0;
+                    qList.forEach((qObj, idx) => {
+                      if (selectedAnswers[idx] === qObj.ans) correctCount++;
+                    });
+                    const scorePercent = Math.round((correctCount / qList.length) * 100);
+                    const passed = scorePercent >= 60;
+
+                    if (passed) {
+                      // Award XP points in localStorage
+                      const email = state.user?.email || 'student';
+                      let profilePoints = parseInt(localStorage.getItem(`nxa_points_${email}`)) || 0;
+                      profilePoints += 50; // award 50 XP
+                      localStorage.setItem(`nxa_points_${email}`, profilePoints);
+                      window.dispatchEvent(new CustomEvent('nxa_db_updated', { detail: { key: 'nxa_points_updated' } }));
+                    }
+
+                    setTestResult({ score: scorePercent, passed });
+                  }}
+                  sx={{ background: '#F7931E', color: '#fff', fontWeight: 900, py: 1.5, borderRadius: '12px', mt: 2 }}
+                >
+                  SUBMIT ASSESSMENT
+                </Button>
+              </Box>
+            ) : (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography sx={{ fontSize: '4rem', mb: 2 }}>{testResult.passed ? '🎉' : '❌'}</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 900, color: themeTextColor, mb: 1 }}>
+                  {testResult.passed ? 'Assessment Passed!' : 'Assessment Failed'}
+                </Typography>
+                <Typography sx={{ fontSize: '1.2rem', fontWeight: 800, color: testResult.passed ? '#10b981' : '#ef4444', mb: 2 }}>
+                  Your Score: {testResult.score}%
+                </Typography>
+                <Typography sx={{ fontSize: '0.72rem', color: themeTextSec, mb: 4, maxWidth: '280px', mx: 'auto' }}>
+                  {testResult.passed 
+                    ? 'Congratulations! You secured a passing grade and have been awarded +50 XP points on your student dossier.' 
+                    : 'You did not secure a passing grade (60% required). Please review the syllabus modules and try again.'}
+                </Typography>
+                <Box sx={{ display: 'grid', gap: 1.5 }}>
+                  {!testResult.passed && (
+                    <Button
+                      variant="contained"
+                      onClick={() => {
+                        setSelectedAnswers({});
+                        setTestResult(null);
+                      }}
+                      sx={{ background: '#F7931E', color: '#fff', py: 1.2, borderRadius: '12px' }}
+                    >
+                      RETRY TEST
+                    </Button>
+                  )}
+                  <Button
+                    variant="outlined"
+                    onClick={() => setActiveTest(null)}
+                    sx={{ color: themeTextSec, borderColor: themeBorderColor, py: 1.2, borderRadius: '12px' }}
+                  >
+                    CLOSE
+                  </Button>
+                </Box>
+              </Box>
+            )}
+          </Box>
+        )}
+      </Dialog>
+
     </Box>
   );
 }
+
+// ═══════════════════════════════════════════════
+// ASSESSMENT QUESTION REGISTRY
+// ═══════════════════════════════════════════════
+const COURSE_TEST_QUESTIONS = {
+  ai_ml_foundations: [
+    { q: "What is the primary loss function used for binary classification?", options: ["Mean Squared Error", "Binary Cross-Entropy", "Hinge Loss", "Huber Loss"], ans: 1 },
+    { q: "Which optimization algorithm is commonly used in neural networks?", options: ["Dijkstra's", "Adam", "Kruskal's", "A* Search"], ans: 1 },
+    { q: "What does 'Overfitting' mean in ML?", options: ["Model fits training data too well but fails on test data", "Model is too simple to capture patterns", "Model is too small to fit in RAM", "Training process is too fast"], ans: 0 },
+    { q: "What is the purpose of a validation set?", options: ["To train model weights", "To evaluate final performance", "To tune hyperparameters and prevent overfitting", "To format output labels"], ans: 2 },
+    { q: "Which neural network architecture is best suited for image processing?", options: ["RNN", "LSTM", "CNN", "Transformer"], ans: 2 }
+  ],
+  javascript_engineering: [
+    { q: "Which keyword is used to declare a block-scoped variable in JS?", options: ["var", "let", "define", "global"], ans: 1 },
+    { q: "What is the output of typeof null in JS?", options: ["'null'", "'undefined'", "'object'", "'string'"], ans: 2 },
+    { q: "Which method is used to add elements to the end of an array?", options: ["push()", "pop()", "shift()", "unshift()"], ans: 0 },
+    { q: "What is a Closure in JavaScript?", options: ["A function bundled with references to its lexical environment", "A method to close browser tabs", "A function that has no parameters", "A way to encrypt scripts"], ans: 0 },
+    { q: "What is the purpose of async/await?", options: ["To make asynchronous code look synchronous", "To speed up loop execution", "To block thread execution", "To compile JS to binary"], ans: 0 }
+  ]
+};
+
+const genericQuestions = [
+  { q: "What does HTML stand for?", options: ["Hyper Text Markup Language", "Home Tool Markup Language", "Hyperlinks and Text Markup Language", "Hyper Tool Multi Language"], ans: 0 },
+  { q: "What is the time complexity of binary search?", options: ["O(N)", "O(log N)", "O(N^2)", "O(1)"], ans: 1 },
+  { q: "Which data structure operates on a Last-In-First-Out (LIFO) basis?", options: ["Queue", "Stack", "Tree", "Graph"], ans: 1 },
+  { q: "What is the primary function of a Database Index?", options: ["To encrypt stored data", "To speed up data retrieval operations", "To compress data size", "To secure network connections"], ans: 1 },
+  { q: "Which protocol is used for secure web browsing?", options: ["HTTP", "FTP", "HTTPS", "SMTP"], ans: 2 }
+];
