@@ -12,6 +12,8 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import TimerIcon from '@mui/icons-material/Timer';
 import CodeIcon from '@mui/icons-material/Code';
 import AssignmentIcon from '@mui/icons-material/Assignment';
+import RadioButtonCheckedIcon from '@mui/icons-material/RadioButtonChecked';
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 
 export default function Courses({ state, setView }) {
   const isDark = localStorage.getItem('nxa_dark_mode') === 'true';
@@ -23,6 +25,86 @@ export default function Courses({ state, setView }) {
   const [activeTest, setActiveTest] = useState(null);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [testResult, setTestResult] = useState(null);
+  const email = state.user?.email || 'student';
+  const [completedLessons, setCompletedLessons] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`nxa_completed_lessons_${email}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [testTimeRemaining, setTestTimeRemaining] = useState(600);
+
+  const toggleLessonCompleted = (lessonKey) => {
+    setCompletedLessons(prev => {
+      const next = prev.includes(lessonKey) 
+        ? prev.filter(k => k !== lessonKey) 
+        : [...prev, lessonKey];
+      localStorage.setItem(`nxa_completed_lessons_${email}`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const submitAssessment = () => {
+    if (!activeTest) return;
+    const qList = COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions;
+    let correctCount = 0;
+    qList.forEach((qObj, idx) => {
+      if (selectedAnswers[idx] === qObj.ans) correctCount++;
+    });
+    const scorePercent = Math.round((correctCount / qList.length) * 100);
+    const passed = scorePercent >= 60;
+
+    if (passed) {
+      const email = state.user?.email || 'student';
+      let profilePoints = parseInt(localStorage.getItem(`nxa_points_${email}`)) || 0;
+      profilePoints += 50;
+      localStorage.setItem(`nxa_points_${email}`, profilePoints);
+      window.dispatchEvent(new CustomEvent('nxa_db_updated', { detail: { key: 'nxa_points_updated' } }));
+    }
+
+    setTestResult({ score: scorePercent, passed });
+  };
+
+  useEffect(() => {
+    let timerId;
+    if (activeTest && testResult === null) {
+      setTestTimeRemaining(600);
+      timerId = setInterval(() => {
+        setTestTimeRemaining(prev => {
+          if (prev <= 1) {
+            clearInterval(timerId);
+            // auto submit
+            const qList = COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions;
+            let correctCount = 0;
+            qList.forEach((qObj, idx) => {
+              if (selectedAnswers[idx] === qObj.ans) correctCount++;
+            });
+            const scorePercent = Math.round((correctCount / qList.length) * 100);
+            const passed = scorePercent >= 60;
+            if (passed) {
+              const email = state.user?.email || 'student';
+              let profilePoints = parseInt(localStorage.getItem(`nxa_points_${email}`)) || 0;
+              profilePoints += 50;
+              localStorage.setItem(`nxa_points_${email}`, profilePoints);
+              window.dispatchEvent(new CustomEvent('nxa_db_updated', { detail: { key: 'nxa_points_updated' } }));
+            }
+            setTestResult({ score: scorePercent, passed });
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timerId);
+  }, [activeTest, testResult, selectedAnswers]);
+
+  const formatTimeRemaining = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
   const [utrId, setUtrId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [submittingPay, setSubmittingPay] = useState(false);
@@ -337,36 +419,49 @@ export default function Courses({ state, setView }) {
                     {expandedModule === idx && item?.lessons && (
                       <Box sx={{ p: 2, pt: 0, borderTop: `1px solid ${themeBorderColor}50` }}>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.5 }}>
-                          {item.lessons.map((lesson, lIdx) => (
-                            <Box 
-                              key={lIdx} 
-                              onClick={() => {
-                                if (isPaid) {
-                                  setActiveVideo({
-                                    title: lesson.title,
-                                    ytId: lesson.ytId || 'jNQXAC9IVRw',
-                                    duration: lesson.duration
-                                  });
-                                } else {
-                                  handleShowPayment(course);
-                                }
-                              }}
-                              sx={{ 
-                                display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, 
-                                borderRadius: '8px', background: 'rgba(0,0,0,0.02)',
-                                cursor: 'pointer',
-                                '&:hover': { background: 'rgba(0,0,0,0.04)' }
-                              }}
-                            >
-                              <PlayArrowIcon sx={{ fontSize: '1rem', color: isPaid ? '#F7931E' : themeTextSec }} />
-                              <Box sx={{ flex: 1 }}>
-                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: isPaid ? themeTextColor : themeTextSec }}>
-                                  {!isPaid && '🔒 '} {lesson.title}
-                                </Typography>
-                                <Typography sx={{ fontSize: '0.6rem', color: themeTextSec }}>{lesson.duration}</Typography>
+                          {item.lessons.map((lesson, lIdx) => {
+                            const lessonKey = `${course.id}::${item.title}::${lesson.title}`;
+                            const isCompleted = completedLessons.includes(lessonKey);
+                            return (
+                              <Box 
+                                key={lIdx} 
+                                onClick={() => {
+                                  if (isPaid) {
+                                    setActiveVideo({
+                                      title: lesson.title,
+                                      ytId: lesson.ytId || 'jNQXAC9IVRw',
+                                      duration: lesson.duration,
+                                      courseId: course.id,
+                                      moduleTitle: item.title,
+                                      lessonIndex: lIdx,
+                                      lessons: item.lessons
+                                    });
+                                  } else {
+                                    handleShowPayment(course);
+                                  }
+                                }}
+                                sx={{ 
+                                  display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, 
+                                  borderRadius: '8px', background: isCompleted ? 'rgba(16,185,129,0.04)' : 'rgba(0,0,0,0.02)',
+                                  border: isCompleted ? '1px solid rgba(16,185,129,0.15)' : '1px solid transparent',
+                                  cursor: 'pointer',
+                                  '&:hover': { background: isCompleted ? 'rgba(16,185,129,0.08)' : 'rgba(0,0,0,0.04)' }
+                                }}
+                              >
+                                {isCompleted ? (
+                                  <RadioButtonCheckedIcon sx={{ fontSize: '1rem', color: '#10b981' }} />
+                                ) : (
+                                  <PlayArrowIcon sx={{ fontSize: '1rem', color: isPaid ? '#F7931E' : themeTextSec }} />
+                                )}
+                                <Box sx={{ flex: 1 }}>
+                                  <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: isCompleted ? '#10b981' : (isPaid ? themeTextColor : themeTextSec), textDecoration: isCompleted ? 'line-through' : 'none' }}>
+                                    {!isPaid && '🔒 '} {lesson.title}
+                                  </Typography>
+                                  <Typography sx={{ fontSize: '0.6rem', color: themeTextSec }}>{lesson.duration}</Typography>
+                                </Box>
                               </Box>
-                            </Box>
-                          ))}
+                            );
+                          })}
                         </Box>
                       </Box>
                     )}
@@ -949,7 +1044,7 @@ export default function Courses({ state, setView }) {
       <Dialog
         open={!!activeVideo}
         onClose={() => setActiveVideo(null)}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
         PaperProps={{
           sx: { 
@@ -961,34 +1056,141 @@ export default function Courses({ state, setView }) {
         }}
       >
         {activeVideo && (
-          <Box sx={{ position: 'relative', background: '#000' }}>
-            <IconButton
-              onClick={() => setActiveVideo(null)}
-              sx={{
-                position: 'absolute', top: 12, right: 12, zIndex: 10,
-                color: '#fff', bgcolor: 'rgba(0,0,0,0.5)',
-                '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-              }}
-            >
-              <CloseIcon />
-            </IconButton>
-            <Box sx={{ position: 'relative', pb: '56.25%', height: 0 }}>
-              <iframe
-                src={`https://www.youtube.com/embed/${activeVideo.ytId}?autoplay=1`}
-                title={activeVideo.title}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+          <Box sx={{ background: isDark ? '#080d16' : '#f8fafc', color: themeTextColor }}>
+            {/* Cinematic Top Bar */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, borderBottom: `1px solid ${themeBorderColor}` }}>
+              <Box>
+                <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, fontSize: '0.65rem', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                  📺 NXA CINEMA THEATER · {activeVideo.duration}
+                </Typography>
+                <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 800, fontFamily: "'Outfit', sans-serif", mt: 0.2, color: themeTextColor }}>
+                  {activeVideo.title}
+                </Typography>
+              </Box>
+              <IconButton onClick={() => setActiveVideo(null)} sx={{ color: themeTextColor }}>
+                <CloseIcon />
+              </IconButton>
             </Box>
-            <Box sx={{ p: 3, bgcolor: modalPaperBg }}>
-              <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, fontSize: '0.6rem', letterSpacing: '1px' }}>
-                NOW PLAYING · {activeVideo.duration}
-              </Typography>
-              <Typography variant="h6" sx={{ color: themeTextColor, fontWeight: 800, mt: 0.5, fontFamily: "'Outfit', sans-serif" }}>
-                {activeVideo.title}
-              </Typography>
-            </Box>
+
+            <Grid container>
+              {/* Cinematic Video Content Area */}
+              <Grid item xs={12} md={8} sx={{ borderRight: `1px solid ${themeBorderColor}` }}>
+                <Box sx={{ position: 'relative', pb: '56.25%', height: 0, background: '#000' }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${activeVideo.ytId}?autoplay=1&rel=0`}
+                    title={activeVideo.title}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </Box>
+                {/* Immersive Controls */}
+                <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                  <Button
+                    variant="outlined"
+                    color={completedLessons.includes(`${activeVideo.courseId}::${activeVideo.moduleTitle}::${activeVideo.title}`) ? "success" : "inherit"}
+                    onClick={() => {
+                      const lKey = `${activeVideo.courseId}::${activeVideo.moduleTitle}::${activeVideo.title}`;
+                      toggleLessonCompleted(lKey);
+                    }}
+                    startIcon={completedLessons.includes(`${activeVideo.courseId}::${activeVideo.moduleTitle}::${activeVideo.title}`) ? <RadioButtonCheckedIcon /> : <RadioButtonUncheckedIcon />}
+                    sx={{ borderRadius: '10px', textTransform: 'none', fontSize: '0.72rem', fontWeight: 800 }}
+                  >
+                    {completedLessons.includes(`${activeVideo.courseId}::${activeVideo.moduleTitle}::${activeVideo.title}`) ? "✓ LESSON COMPLETED" : "MARK LESSON COMPLETE"}
+                  </Button>
+
+                  <Box sx={{ display: 'flex', gap: 1.5 }}>
+                    <Button
+                      size="small"
+                      disabled={activeVideo.lessonIndex === 0}
+                      onClick={() => {
+                        const prevIdx = activeVideo.lessonIndex - 1;
+                        const prevLesson = activeVideo.lessons[prevIdx];
+                        setActiveVideo({
+                          ...activeVideo,
+                          title: prevLesson.title,
+                          ytId: prevLesson.ytId || 'jNQXAC9IVRw',
+                          duration: prevLesson.duration,
+                          lessonIndex: prevIdx
+                        });
+                      }}
+                      sx={{ fontSize: '0.65rem', fontWeight: 800 }}
+                    >
+                      ◀ PREVIOUS
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={activeVideo.lessonIndex === activeVideo.lessons.length - 1}
+                      onClick={() => {
+                        const nextIdx = activeVideo.lessonIndex + 1;
+                        const nextLesson = activeVideo.lessons[nextIdx];
+                        setActiveVideo({
+                          ...activeVideo,
+                          title: nextLesson.title,
+                          ytId: nextLesson.ytId || 'jNQXAC9IVRw',
+                          duration: nextLesson.duration,
+                          lessonIndex: nextIdx
+                        });
+                      }}
+                      sx={{ fontSize: '0.65rem', fontWeight: 800 }}
+                    >
+                      NEXT ▶
+                    </Button>
+                  </Box>
+                </Box>
+              </Grid>
+
+              {/* Sidebar Playlist */}
+              <Grid item xs={12} md={4}>
+                <Box sx={{ p: 2.5 }}>
+                  <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, letterSpacing: '1px', display: 'block', mb: 2 }}>
+                    📚 SYLLABUS LESSONS ({activeVideo.lessons.length})
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: '380px', overflowY: 'auto', pr: 0.5 }}>
+                    {activeVideo.lessons.map((lesson, idx) => {
+                      const lKey = `${activeVideo.courseId}::${activeVideo.moduleTitle}::${lesson.title}`;
+                      const isComp = completedLessons.includes(lKey);
+                      const isCurrent = activeVideo.lessonIndex === idx;
+
+                      return (
+                        <Box
+                          key={idx}
+                          onClick={() => {
+                            setActiveVideo({
+                              ...activeVideo,
+                              title: lesson.title,
+                              ytId: lesson.ytId || 'jNQXAC9IVRw',
+                              duration: lesson.duration,
+                              lessonIndex: idx
+                            });
+                          }}
+                          sx={{
+                            display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: '10px',
+                            background: isCurrent ? 'rgba(247,147,30,0.08)' : (isComp ? 'rgba(16,185,129,0.03)' : 'rgba(0,0,0,0.01)'),
+                            border: isCurrent ? '1px solid #F7931E' : (isComp ? '1px solid rgba(16,185,129,0.1)' : '1px solid transparent'),
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            '&:hover': { background: isCurrent ? 'rgba(247,147,30,0.12)' : 'rgba(0,0,0,0.03)' }
+                          }}
+                        >
+                          {isComp ? (
+                            <RadioButtonCheckedIcon sx={{ fontSize: '0.9rem', color: '#10b981' }} />
+                          ) : (
+                            <PlayArrowIcon sx={{ fontSize: '0.9rem', color: isCurrent ? '#F7931E' : themeTextSec }} />
+                          )}
+                          <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '0.7rem', fontWeight: isCurrent ? 800 : 600, color: isCurrent ? '#F7931E' : (isComp ? '#10b981' : themeTextColor) }}>
+                              {lesson.title}
+                            </Typography>
+                            <Typography sx={{ fontSize: '0.55rem', color: themeTextSec }}>{lesson.duration}</Typography>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              </Grid>
+            </Grid>
           </Box>
         )}
       </Dialog>
@@ -1003,121 +1205,187 @@ export default function Courses({ state, setView }) {
           sx: { borderRadius: '24px', p: 3.5, bgcolor: modalPaperBg, border: `1px solid ${themeBorderColor}` }
         }}
       >
-        {activeTest && (
-          <Box>
-            <DialogTitle sx={{ p: 0, color: '#F7931E', fontWeight: 900, fontSize: '1.2rem', fontFamily: "'Outfit', sans-serif" }}>
-              📝 {activeTest.test.title}
-            </DialogTitle>
-            <Typography variant="caption" sx={{ color: themeTextSec, fontWeight: 700, display: 'block', mb: 3 }}>
-              COURSE: {activeTest.course.title}
-            </Typography>
+        {activeTest && (() => {
+          const qList = COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions;
+          const currentQuestion = qList[currentQuestionIndex];
+          const hasTimeExpired = testTimeRemaining <= 0;
 
-            {testResult === null ? (
-              <Box>
-                {/* Render questions */}
-                {(COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions).map((qObj, qIdx) => (
-                  <Box key={qIdx} sx={{ mb: 3, p: 2, background: 'rgba(0,0,0,0.01)', border: `1px solid ${themeBorderColor}`, borderRadius: '14px' }}>
-                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 800, color: themeTextColor, mb: 1.5 }}>
-                      Q{qIdx + 1}: {qObj.q}
+          return (
+            <Box>
+              {/* Stepper progress indicator */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, fontSize: '0.65rem', letterSpacing: '1px' }}>
+                  📝 ASSESSMENT MODE · QUESTION {currentQuestionIndex + 1} OF {qList.length}
+                </Typography>
+                <Typography variant="caption" sx={{ 
+                  color: testTimeRemaining < 60 ? '#ef4444' : '#F7931E', 
+                  fontWeight: 900, 
+                  fontSize: '0.7rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5
+                }}>
+                  ⏳ {formatTimeRemaining(testTimeRemaining)}
+                </Typography>
+              </Box>
+
+              {/* Progress bar */}
+              <Box sx={{ width: '100%', height: '6px', borderRadius: '3px', bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', mb: 3, overflow: 'hidden' }}>
+                <Box sx={{ width: `${((currentQuestionIndex + 1) / qList.length) * 100}%`, height: '100%', bgcolor: '#F7931E', transition: 'width 0.3s ease' }} />
+              </Box>
+
+              <Typography variant="h6" sx={{ color: themeTextColor, fontWeight: 800, mb: 1, fontFamily: "'Outfit', sans-serif", fontSize: '1.1rem' }}>
+                {activeTest.test.title}
+              </Typography>
+              <Typography variant="caption" sx={{ color: themeTextSec, fontWeight: 700, display: 'block', mb: 3 }}>
+                COURSE: {activeTest.course.title}
+              </Typography>
+
+              {testResult === null ? (
+                <Box>
+                  {/* Single Question Stepper View */}
+                  <Box sx={{ mb: 4, p: 2.5, background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', border: `1px solid ${themeBorderColor}`, borderRadius: '18px' }}>
+                    <Typography sx={{ fontSize: '0.9rem', fontWeight: 800, color: themeTextColor, mb: 2.5, lineHeight: 1.4 }}>
+                      Q{currentQuestionIndex + 1}: {currentQuestion.q}
                     </Typography>
-                    <Box sx={{ display: 'grid', gap: 1 }}>
-                      {qObj.options.map((opt, oIdx) => {
-                        const isSelected = selectedAnswers[qIdx] === oIdx;
+                    <Box sx={{ display: 'grid', gap: 1.5 }}>
+                      {currentQuestion.options.map((opt, oIdx) => {
+                        const isSelected = selectedAnswers[currentQuestionIndex] === oIdx;
                         return (
                           <Button
                             key={oIdx}
                             variant="outlined"
-                            onClick={() => setSelectedAnswers(prev => ({ ...prev, [qIdx]: oIdx }))}
+                            onClick={() => setSelectedAnswers(prev => ({ ...prev, [currentQuestionIndex]: oIdx }))}
                             sx={{
                               justifyContent: 'flex-start',
                               textTransform: 'none',
-                              fontSize: '0.72rem',
-                              py: 1,
-                              borderRadius: '10px',
+                              fontSize: '0.8rem',
+                              py: 1.5,
+                              px: 2.5,
+                              borderRadius: '12px',
+                              textAlign: 'left',
                               color: isSelected ? '#F7931E' : themeTextColor,
                               borderColor: isSelected ? '#F7931E' : themeBorderColor,
-                              background: isSelected ? 'rgba(247,147,30,0.05)' : 'transparent',
+                              background: isSelected ? 'rgba(247,147,30,0.06)' : 'transparent',
                               '&:hover': {
                                 borderColor: '#F7931E',
                                 background: 'rgba(247,147,30,0.02)'
                               }
                             }}
                           >
+                            <Box sx={{ 
+                              width: '20px', height: '20px', borderRadius: '50%', 
+                              border: `2px solid ${isSelected ? '#F7931E' : themeTextSec}`, 
+                              mr: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: isSelected ? '#F7931E' : 'transparent',
+                              flexShrink: 0
+                            }}>
+                              {isSelected && <Box sx={{ width: '8px', height: '8px', borderRadius: '50%', bgcolor: '#fff' }} />}
+                            </Box>
                             {opt}
                           </Button>
                         );
                       })}
                     </Box>
                   </Box>
-                ))}
 
-                <Button
-                  fullWidth
-                  variant="contained"
-                  onClick={() => {
-                    const qList = COURSE_TEST_QUESTIONS[activeTest.course.id] || genericQuestions;
-                    let correctCount = 0;
-                    qList.forEach((qObj, idx) => {
-                      if (selectedAnswers[idx] === qObj.ans) correctCount++;
-                    });
-                    const scorePercent = Math.round((correctCount / qList.length) * 100);
-                    const passed = scorePercent >= 60;
-
-                    if (passed) {
-                      // Award XP points in localStorage
-                      const email = state.user?.email || 'student';
-                      let profilePoints = parseInt(localStorage.getItem(`nxa_points_${email}`)) || 0;
-                      profilePoints += 50; // award 50 XP
-                      localStorage.setItem(`nxa_points_${email}`, profilePoints);
-                      window.dispatchEvent(new CustomEvent('nxa_db_updated', { detail: { key: 'nxa_points_updated' } }));
-                    }
-
-                    setTestResult({ score: scorePercent, passed });
-                  }}
-                  sx={{ background: '#F7931E', color: '#fff', fontWeight: 900, py: 1.5, borderRadius: '12px', mt: 2 }}
-                >
-                  SUBMIT ASSESSMENT
-                </Button>
-              </Box>
-            ) : (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography sx={{ fontSize: '4rem', mb: 2 }}>{testResult.passed ? '🎉' : '❌'}</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 900, color: themeTextColor, mb: 1 }}>
-                  {testResult.passed ? 'Assessment Passed!' : 'Assessment Failed'}
-                </Typography>
-                <Typography sx={{ fontSize: '1.2rem', fontWeight: 800, color: testResult.passed ? '#10b981' : '#ef4444', mb: 2 }}>
-                  Your Score: {testResult.score}%
-                </Typography>
-                <Typography sx={{ fontSize: '0.72rem', color: themeTextSec, mb: 4, maxWidth: '280px', mx: 'auto' }}>
-                  {testResult.passed 
-                    ? 'Congratulations! You secured a passing grade and have been awarded +50 XP points on your student dossier.' 
-                    : 'You did not secure a passing grade (60% required). Please review the syllabus modules and try again.'}
-                </Typography>
-                <Box sx={{ display: 'grid', gap: 1.5 }}>
-                  {!testResult.passed && (
+                  {/* Navigation Panel */}
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Button
-                      variant="contained"
-                      onClick={() => {
-                        setSelectedAnswers({});
-                        setTestResult(null);
-                      }}
-                      sx={{ background: '#F7931E', color: '#fff', py: 1.2, borderRadius: '12px' }}
+                      variant="outlined"
+                      disabled={currentQuestionIndex === 0}
+                      onClick={() => setCurrentQuestionIndex(prev => prev - 1)}
+                      sx={{ borderColor: themeBorderColor, color: themeTextColor, borderRadius: '10px', fontSize: '0.72rem', px: 3 }}
                     >
-                      RETRY TEST
+                      PREVIOUS
                     </Button>
-                  )}
-                  <Button
-                    variant="outlined"
-                    onClick={() => setActiveTest(null)}
-                    sx={{ color: themeTextSec, borderColor: themeBorderColor, py: 1.2, borderRadius: '12px' }}
-                  >
-                    CLOSE
-                  </Button>
+                    
+                    {currentQuestionIndex === qList.length - 1 ? (
+                      <Button
+                        variant="contained"
+                        onClick={submitAssessment}
+                        sx={{ background: '#F7931E', color: '#fff', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 900, px: 4 }}
+                      >
+                        SUBMIT ASSESSMENT
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="contained"
+                        onClick={() => setCurrentQuestionIndex(prev => prev + 1)}
+                        sx={{ background: '#0B2E59', color: '#fff', borderRadius: '10px', fontSize: '0.72rem', px: 4 }}
+                      >
+                        NEXT
+                      </Button>
+                    )}
+                  </Box>
                 </Box>
-              </Box>
-            )}
-          </Box>
-        )}
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography sx={{ fontSize: '4rem', mb: 2 }}>{testResult.passed ? '🎉' : '❌'}</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 900, color: themeTextColor, mb: 1 }}>
+                    {testResult.passed ? 'Assessment Passed!' : 'Assessment Failed'}
+                  </Typography>
+                  <Typography sx={{ fontSize: '1.2rem', fontWeight: 800, color: testResult.passed ? '#10b981' : '#ef4444', mb: 2 }}>
+                    Your Score: {testResult.score}%
+                  </Typography>
+                  
+                  {/* Detailed question key reviews */}
+                  <Box sx={{ mt: 3, mb: 4, maxHeight: '200px', overflowY: 'auto', border: `1px solid ${themeBorderColor}`, borderRadius: '14px', p: 2, background: 'rgba(0,0,0,0.01)', textAlign: 'left' }}>
+                    <Typography variant="caption" sx={{ color: '#F7931E', fontWeight: 900, display: 'block', mb: 1.5, letterSpacing: '0.5px' }}>
+                      📋 QUESTION SUMMARY BREAKDOWN:
+                    </Typography>
+                    {qList.map((qObj, idx) => {
+                      const isCorrect = selectedAnswers[idx] === qObj.ans;
+                      return (
+                        <Box key={idx} sx={{ borderBottom: idx === qList.length - 1 ? 'none' : `1px solid ${themeBorderColor}40`, py: 1 }}>
+                          <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, color: themeTextColor }}>
+                            {isCorrect ? '✔️' : '❌'} Q{idx + 1}: {qObj.q}
+                          </Typography>
+                          <Typography sx={{ fontSize: '0.62rem', color: isCorrect ? '#10b981' : '#ef4444', pl: 3.2 }}>
+                            Your Answer: {qObj.options[selectedAnswers[idx]] || 'None'} 
+                            {!isCorrect && ` (Correct: ${qObj.options[qObj.ans]})`}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+
+                  <Typography sx={{ fontSize: '0.75rem', color: themeTextSec, mb: 4, maxWidth: '280px', mx: 'auto', lineHeight: 1.45 }}>
+                    {testResult.passed 
+                      ? 'Congratulations! You secured a passing grade and have been awarded +50 XP points on your student dossier.' 
+                      : 'You did not secure a passing grade (60% required). Please review the syllabus modules and try again.'}
+                  </Typography>
+
+                  <Box sx={{ display: 'grid', gap: 1.5 }}>
+                    {!testResult.passed && (
+                      <Button
+                        variant="contained"
+                        onClick={() => {
+                          setSelectedAnswers({});
+                          setTestResult(null);
+                          setCurrentQuestionIndex(0);
+                        }}
+                        sx={{ background: '#F7931E', color: '#fff', py: 1.5, borderRadius: '12px', fontWeight: 900 }}
+                      >
+                        RETRY TEST
+                      </Button>
+                    )}
+                    <Button
+                      variant="outlined"
+                      onClick={() => {
+                        setActiveTest(null);
+                        setCurrentQuestionIndex(0);
+                      }}
+                      sx={{ color: themeTextSec, borderColor: themeBorderColor, py: 1.2, borderRadius: '12px' }}
+                    >
+                      CLOSE
+                    </Button>
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          );
+        })()}
       </Dialog>
 
     </Box>
